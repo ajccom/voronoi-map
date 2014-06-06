@@ -625,7 +625,7 @@ void function (isDebug) {
         document.body.appendChild(canvas);
         this.moistureCanvas = canvas;
       }
-      this.seed = Math.random();
+      this.seed = Math.random() * 1000;
       this.moisture = perlinNoise(this.moistureCanvas, 12, 12, this.seed);
       this.moisturePerlinData = this.moistureCanvas.getContext('2d').getImageData(0, 0, 100, 100);
       console.timeEnd('set perlinData: ');
