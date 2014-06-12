@@ -657,7 +657,7 @@ void function (isDebug) {
         var canvas = document.createElement('canvas');
         canvas.width = 100;
         canvas.height = 100;
-        document.section.appendChild(canvas);
+        document.getElementById('section').appendChild(canvas);
         this.perlinCanvas = canvas;
       }
       this.seed = Math.random() * 1000;
@@ -668,7 +668,7 @@ void function (isDebug) {
         canvas = document.createElement('canvas');
         canvas.width = 100;
         canvas.height = 100;
-        document.section.appendChild(canvas);
+        document.getElementById('section').appendChild(canvas);
         this.moistureCanvas = canvas;
       }
       this.seed = Math.random() * 1000;
