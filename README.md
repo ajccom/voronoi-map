@@ -3,6 +3,8 @@ voronoi-map
 
 use voronoi graph to create game map
 
+[to look a look](http://ajccom.github.io/voronoi-map/)
+
 Inspired by [http://www-cs-students.stanford.edu/~amitp/game-programming/polygon-map-generation/](http://www-cs-students.stanford.edu/~amitp/game-programming/polygon-map-generation/)
 
 - voronoi graph
