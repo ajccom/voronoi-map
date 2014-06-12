@@ -48,6 +48,1051 @@
 
 <hr><p>just a toy :)</p>
       </section>
+      
+      <section>
+        <script src="d3.v3.min.js"></script>
+        <script src="Simplex.js"></script>
+        <script src="perlin.js"></script>
+        <div class="control">
+          <button onclick="app.voronoi.update();">change</button>
+        </div>
+        <canvas id="canvas" width="500" height="500" ></canvas>
+        <script>
+"use strict"
+void function (isDebug) {
+	var app = {};
+	
+	app.ini = function () {
+		app.voronoi.ini();
+	};
+	
+	// voronoi 
+	app.voronoi = {
+		width: 500,
+		height: 500,
+    oceanScale: 0.5,
+    skin: {
+      water: '#9999ff',
+      ocean: '#4444ff',
+      'subtropical desert': '#e9ddc7',
+      snow: '#ffffff',
+      tundra: '#ddddbb',
+      bare: '#bbbbbb',
+      scorched: '#999999',
+      taiga: '#ccd4bb',
+      shrubland: '#c4ccbb',
+      'temperate desert': '#e4e8ca',
+      'temperate rain forest': '#a4c4a8',
+      'temperate deciduous forest': '#b4c9a9',
+      grassland: '#c4d4aa',
+      'tropical rain forest': '#9cbba9',
+      'tropical seasonal forest' : '#a9cca4',
+      land: '#ffffff'
+    },
+    //data : {
+    //  0: {
+    //    id: 0,
+    //    point: [x, y]
+    //    neighbors: [cellsId1, cellsId2, ...],
+    //    path: [point1, point2, ...],
+    //    elevation: 0,//海拔
+    //    biome: 'snow', //环境，生物群落
+    //    river: [point1, point2, ...],
+    //  }
+    //}
+    data: {},
+    //corners : {
+    //  0: {
+    //    id: 0,
+    //    point: [x, y]
+    //    owner: [cellsId1, cellsId2, ...],
+    //    elevation: 0
+    //  }
+    //}
+    corners: {},
+    //sides : {
+    //  0: {
+    //    id: 0,
+    //    owner: [cellsId1, cellsId2],
+    //    path: [point1, point2, ...],
+    //    coast: true
+    //  }
+    //}
+    sides: {},
+    voronoi: d3.geom.voronoi().clipExtent([[0, 0], [500, 500]]),
+		update: function (w, h, num) {
+      this.data = {};
+      this.corners = {};
+      this.sides = {};
+			if (isNaN(w) && isNaN(h) && w > 0 && h > 0) {
+				app.voronoi.width = w;
+				app.voronoi.height = h;
+			}
+      this.cellLength = num || 5000;
+			var vertices = d3.range(this.cellLength).map(function(d) {
+        return [Math.random() * app.voronoi.width, Math.random() * app.voronoi.height];
+			});
+      
+      this.currentVertices = vertices;
+      
+      app.voronoi._doLloydRelaxation(2);
+      if (isDebug) {this.showCells(this.currentVertices)};
+		},
+    _doLloydRelaxation: function (times) {
+    //Lloyd Relaxation
+    //http://en.wikipedia.org/wiki/Centroid#cite_note-9
+    //http://en.wikipedia.org/wiki/Lloyd%27s_algorithm
+      if (typeof times !== 'number' || times <= 0) {return}
+      if (!this.currentPathsVertices) {this.currentPathsVertices = this.voronoi(this.currentVertices)}
+      var arr = this.currentPathsVertices,
+          i = 0,
+          l = arr.length,
+          result = [];
+      for (i; i < l; i++) {
+        result.push(app.voronoi._getPolygonCentroid(arr[i]));
+      }
+      
+      this.currentVertices = result;
+      this.currentPathsVertices = this.voronoi(this.currentVertices);
+      if (times === 1) {
+        this.isRelaxed = true;
+        
+        //set hashCell object to save id
+        this.hashCell = {};
+        
+        //set hashCorner object to save corner id
+        this.hashCorner = {};
+        
+        //set data
+        var i = 0,
+            l = result.length,
+            j = 0,
+            len = 0,
+            temp = null,
+            str = '',
+            cid = -1;
+        for (i; i < l; i++) {
+          temp = this.currentPathsVertices[i];
+          this.data[i] = {
+            id: i,
+            point: result[i],
+            path: temp
+          }
+          this.hashCell[result[i].toString()] = i;
+          
+          len = temp.length;
+          for (j = 0; j < len; j++) {
+            str = temp[j].toString();
+            if (typeof this.hashCorner[str] === 'undefined') {
+              cid++;
+              this.hashCorner[str] = cid;
+            }
+          }
+        }
+        console.time('set side data: ');
+        this._setSideHash();
+        console.timeEnd('set side data: ');
+        console.time('set cell data: ');
+        this._setCellsData();
+        console.timeEnd('set cell data: ');
+        
+        console.time('set river');
+        this._setRiver();
+        console.timeEnd('set river');
+        
+        this.render();
+      }
+      this._doLloydRelaxation(times - 1);
+    },
+    _getPolygonCentroid: function (vertices) {
+      // get area of polygon
+      vertices[vertices.length] = vertices[0];
+      var area = 0,
+          i = 0,
+          l = vertices.length,
+          t1 = null,
+          t2 = null;
+      for (i; i < l - 1; i++) {
+        t1 = vertices[i];
+        t2 = vertices[i + 1];
+        area += (t1[0] * t2[1] - t2[0] * t1[1]);
+      }
+      area = area / 2;
+      
+      //get centroid of polygon
+      var x = 0,
+          y = 0,
+          i = 0,
+          l = vertices.length, 
+          t1 = null,
+          t2 = null;
+      for (i; i < l - 1; i++) {
+        t1 = vertices[i];
+        t2 = vertices[i + 1];
+        x += (t1[0] + t2[0]) * (t1[0] * t2[1] - t2[0] * t1[1]);
+        y += (t1[1] + t2[1]) * (t1[0] * t2[1] - t2[0] * t1[1]);
+      }
+      
+      x = x / (6 * area);
+      y = y / (6 * area);
+      
+      return [x, y];
+    },
+    render: function() {
+      var ctx = this.canvas.getContext('2d');
+      // background
+      ctx.clearRect(0, 0, app.voronoi.width, app.voronoi.height);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = this.skin.ocean;
+      ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+      ctx.fill();
+      // edges
+      ctx.strokeStyle = '#000';
+      var cells = this.data,
+          id = '',
+          skin = '',
+          i = 0,
+          j = 0,
+          l = 0,
+          len = 0,
+          temp = null,
+          center = [],
+          currentPath = null;
+      //fill path
+      for (id in cells) {    
+        temp = cells[id].sides;
+        //console.log(temp);
+        center = cells[id].point;
+        l = temp.length;
+        ctx.beginPath();
+        for (i = 0; i < l; i++) {
+          skin = cells[id].biome;
+          ctx.fillStyle = this.skin[skin];
+          ctx.strokeStyle = 'rgba(0,0,0,0)';
+          currentPath = this.sides[temp[i]].path;
+          len = currentPath.length;
+          ctx.moveTo(center[0], center[1]);
+          ctx.lineTo(currentPath[0][0], currentPath[0][1]);
+          for (j = 0; j < len - 1; j++) {
+            ctx.lineTo(currentPath[j + 1][0], currentPath[j + 1][1]);
+          }
+          ctx.lineTo(center[0], center[1]);
+          if (this.isRelaxed) {
+            ctx.fill();
+            //ctx.stroke();
+            //ctx.closePath();
+            //ctx.beginPath();
+          }
+          
+        }
+        ctx.closePath();
+        
+      }
+      //draw path
+      /*for (id in cells) {    
+        temp = cells[id].sides;
+        center = cells[id].point;
+        l = temp.length;
+        ctx.beginPath();
+        for (i = 0; i < l; i++) {
+          skin = cells[id].biome;
+          ctx.fillStyle = this.skin[skin];
+          if (skin === 'water' || skin === 'ocean') {
+            ctx.strokeStyle = this.skin[skin];
+          } else {
+            ctx.strokeStyle = '#000000';
+          }
+          currentPath = this.sides[temp[i]].path;
+          len = currentPath.length;
+          ctx.moveTo(currentPath[0][0], currentPath[0][1]);
+          for (j = 0; j < len - 1; j++) {
+            ctx.lineTo(currentPath[j + 1][0], currentPath[j + 1][1]);
+          }
+          if (this.isRelaxed) {
+            ctx.stroke();
+            ctx.closePath();
+            ctx.beginPath();
+          }
+        }
+        ctx.closePath();
+      }*/
+      
+      //draw river
+      this._drawRiverPath();
+      
+      
+      //clear data
+      delete this.data;
+      delete this.sides;
+      delete this.corners;
+      delete this.currentVertices;
+      delete this.currentPathsVertices;
+      delete this.isRelaxed;
+      delete this.delaunayData;
+      delete this.hashCell;
+      delete this.hashNeighbor;
+      delete this.hashSide;
+      delete this.hashEdge;
+      delete this.hashCorner;
+      delete this.hashCornerToucher;
+      delete this.hasChecked;
+      delete this.riverPath;
+    },
+    _setCellsData: function () {
+      //neighbors
+      console.time('set _getNeighbors: ');
+      var d = this.data,
+          id = '',
+          temp = null;
+      for (id in d) {
+        temp = d[id];
+        temp.neighbors = this._getNeighbors(id);
+        temp.corners = this._getCorners(id);
+        //cell's side has setted in _setSideHash function
+      }
+      console.timeEnd('set _getNeighbors: ');
+      
+      //land ocean
+      this._setLandAndOcean();
+      
+    },
+    _getNeighbors: function (pointId) {
+      if (!this.delaunayData) {console.time('set delaunayData: ');
+        this.delaunayData = d3.geom.delaunay(this.currentVertices);
+        this.hashNeighbor = {};
+        //translate points to ids
+        //saved in a hash table, delete after used
+        var d = this.delaunayData,
+            i = 0,
+            j = 0,
+            l = d.length,
+            temp = null,
+            currentPath = null,
+            neighbors = null,
+            result = [],
+            id = '',
+            len = 0;
+        for (i; i < l; i++) {
+          temp = d[i];
+          len = temp.length;
+          for (j = 0; j < len; j++) {
+            temp[j] = this._getCellId(temp[j]);
+          }
+        }
+        
+        for (i = 0; i < l; i++) {
+          temp = d[i];
+          len = temp.length;
+          for (j = 0; j < len; j++) {
+            neighbors = this.hashNeighbor[temp[j]];
+            if (!neighbors) {neighbors = []}
+            neighbors = neighbors.concat(temp);
+            this.hashNeighbor[temp[j]] = neighbors;
+          }
+        }
+        
+        for (id in this.hashNeighbor) {
+          temp = this.hashNeighbor[id];
+          temp = this._removeDuplicate(temp, id);
+          this.hashNeighbor[id] = temp;
+        }
+        console.timeEnd('set delaunayData: ');
+      }
+      
+      //return neighbor
+      return this.hashNeighbor[pointId];
+      
+    },
+    _getCorners: function (pointId) {
+      var d = this.currentPathsVertices[pointId],
+          i = 0,
+          l = d.length,
+          temp = null,
+          currentPath = null,
+          result = [];
+      for (i; i < l; i++) {
+        temp = d[i];
+        //console.log(temp);
+        result.push(this._getCornerId(temp));
+      }
+      
+      return result;
+      
+    },
+    _setSideHash: function () {
+      if (!this.hashSide) {
+        this.hashSide = {};
+        this.hashCornerToucher = {};
+        var paths = this.currentPathsVertices,
+            c = this.hashCorner,
+            d = this.data,
+            i = 0,
+            j = 0,
+            l = paths.length,
+            len = 0,
+            temp = null,
+            concer1 = '',//means point at two sides
+            concer2 = '',
+            id = -1;
+        for (i; i < l; i++) {
+          temp = paths[i];
+          len = temp.length;
+          d[i].sides = [];
+          for (j = 0; j < len - 1; j++) {
+            concer1 = this._getCornerId(temp[j]);
+            concer2 = this._getCornerId(temp[j + 1]);
+            if (typeof this.hashSide[[concer1, concer2]] === 'undefined') {
+              id++;
+              d[i].sides.push(id);
+              this.sides[id] = {
+                id: id,
+                path: [temp[j], temp[j + 1]],
+                corner: [concer1, concer2],
+                owner: [i]
+              };
+              
+              this.hashSide[[concer1, concer2]] = id;
+              this.hashSide[[concer2, concer1]] = id;
+              if (j === len - 2) {
+                concer1 = this._getCornerId(temp[j + 1]);
+                concer2 = this._getCornerId(temp[0]);
+                if (typeof this.hashSide[[concer1, concer2]] === 'undefined') {
+                  id++;
+                  d[i].sides.push(id);
+                  this.sides[id] = {
+                    id: id,
+                    path: [temp[j + 1], temp[0]],
+                    corner: [c[temp[j + 1]], c[temp[0]]],
+                    owner: [i]
+                  };
+                  this.hashSide[[concer1, concer2]] = id;
+                  this.hashSide[[concer2, concer1]] = id;
+                  
+                } else {
+                  d[i].sides.push(this.hashSide[[concer1, concer2]]);
+                  this.sides[this.hashSide[[concer1, concer2]]].owner.push(i);
+                  
+                }
+              }
+            } else {
+              d[i].sides.push(this.hashSide[[concer1, concer2]]);
+              this.sides[this.hashSide[[concer1, concer2]]].owner.push(i);
+              
+              if (j === len - 2) {
+                concer1 = this._getCornerId(temp[j + 1]);
+                concer2 = this._getCornerId(temp[0]);
+                if (typeof this.hashSide[[concer1, concer2]] === 'undefined') {
+                  id++;
+                  d[i].sides.push(id);
+                  this.sides[id] = {
+                    id: id,
+                    path: [temp[j + 1], temp[0]],
+                    corner: [c[temp[j + 1]], c[temp[0]]],
+                    owner: [i]
+                  };
+                  this.hashSide[[concer1, concer2]] = id;
+                  this.hashSide[[concer2, concer1]] = id;
+                  
+                } else {
+                  d[i].sides.push(this.hashSide[[concer1, concer2]]);
+                  this.sides[this.hashSide[[concer1, concer2]]].owner.push(i);
+                  
+                }
+              }
+            }
+          }
+        }
+        
+        this._setTouchers();
+      }
+      
+    },
+    _setTouchers: function () {
+      var s = this.sides,
+          c = this.corners,
+          idx = 0,
+          temp = null,
+          c1 = null,
+          c2 = null;
+      for (idx in s) {
+        temp = s[idx].corner;
+        c1 = temp[0];
+        c2 = temp[1];
+        if (!c[c1].toucher) {c[c1].toucher = []}
+        if (!c[c2].toucher) {c[c2].toucher = []}
+        c[c1].toucher.push(idx);
+        c[c2].toucher.push(idx);
+      }
+    },
+    noiseEdge: function (path, minLength, range) {
+      if (!this.hashEdge) {this.hashEdge = {}}
+      var point1 = path[0],
+          point2 = path[1],
+          concer1 = this._getCornerId(point1),
+          concer2 = this._getCornerId(point2),
+          result = [],
+          x = point1[0],
+          y = point1[1],
+          temp = [],
+          rate = 0,
+          a = 0,
+          i = minLength,
+          dir = point2[0] - point1[0] > 0 ? 1 : -1,
+          l = Math.abs(point2[0] - point1[0]);
+          
+      //if has nosied 
+      if (this.hashEdge[[concer2, concer1]]) {
+        return this.hashEdge[[concer2, concer1]].reverse();
+      }
+      result.push(point1);
+      if (point2[0] !== point1[0]) {    
+        rate = (point2[1] - point1[1]) / (point2[0] - point1[0]);
+        a = y - x * rate;
+        //if (Math.abs(rate) <= 2) {
+          for (i; i < l; i+=minLength) {
+            x = x + minLength * dir;
+            y = x * rate + range * Math.random() + a;
+            //temp = [x + range * Math.random(), y];
+            temp = [x, y];
+            result.push(temp);
+          }
+        /*} else {
+          for (i; i < l; i+=minLength) {
+            y = y + minLength * dir;
+            x = (y - a) / rate + range * Math.random();
+            //temp = [x + range * Math.random(), y];
+            temp = [x, y];
+            result.push(temp);
+          }
+        }*/
+      } else {
+        l = Math.abs(point1[1] - point2[1]);
+        for (i; i < l; i+=minLength) {
+          y = y + minLength * dir;
+          x = point1[0] + range * Math.random();
+          temp = [x, y];
+          result.push(temp);
+        }
+      }
+      result.push(point2);
+      this.hashEdge[[concer1, concer2]] = result;
+      return result;
+    },
+    _removeDuplicate: function (arr, removeValue) {
+      var hash = {},
+          result = [],
+          i = 0,
+          l = arr.length;
+      for (i; i < l; i++) {
+        if (!hash[arr[i]] && arr[i] != removeValue) {
+          result.push(arr[i]);
+          hash[arr[i]] = 1;
+        }
+      }
+      return result;
+    },
+    _getCellId: function (point) {
+      return this.hashCell[point.toString()];
+    },
+    _getCornerId: function (point) {
+      var id = this.hashCorner[point.toString()];
+      if (!this.corners[id]) {
+        this.corners[id] = {
+          id: id,
+          point: point
+        }
+      }
+      return id;
+    },
+    showDelaunay: function () {
+      var ctx = this.canvas.getContext('2d');
+      var path = d3.geom.delaunay(this.currentVertices);
+      // edges
+      ctx.strokeStyle = '#f00';
+      var temp = null,
+          skin = '',
+          l = path.length,
+          i = 0,
+          j = 0,
+          len = 0;
+      ctx.beginPath();
+      for (i; i < l; i++) {
+          
+          temp = path[i];
+          len = temp.length;
+          ctx.moveTo(temp[0][0], temp[0][1]);
+          for (j = 0; j < len - 1; j++) {
+             ctx.lineTo(temp[j + 1][0], temp[j + 1][1]);
+          }
+          ctx.lineTo(temp[0][0], temp[0][1]);
+      }
+      ctx.stroke();
+      ctx.closePath();
+    },
+    _showPoints: function (vertices) {
+      if (vertices && vertices.length) {
+      
+        var ctx = this.canvas.getContext('2d');
+        ctx.beginPath();
+        ctx.fillStyle = '#ff0000';
+        var i = 0,
+            l = vertices.length,
+            temp = null;
+        for (i; i < l; i++) {
+          ctx.beginPath();
+          temp = vertices[i];
+          //ctx.arc(temp[0], temp[1], 2, 0, 2*Math.PI);
+          //ctx.fill();
+          ctx.fillText(i, temp[0], temp[1]);
+          ctx.closePath();
+        }
+      }
+    },
+    showCells: function () {
+      this._showPoints(this.currentVertices);
+    },
+    _setLandAndOcean: function () {//perlin noise
+      console.time('set perlinData: ');
+      if (!this.perlinCanvas) {
+        var canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        document.body.appendChild(canvas);
+        this.perlinCanvas = canvas;
+      }
+      this.seed = Math.random() * 1000;
+      this.perlin = perlinNoise(this.perlinCanvas, 54, 54, this.seed);
+      this.perlinData = this.perlinCanvas.getContext('2d').getImageData(0, 0, 100, 100);
+      
+      if (!this.moistureCanvas) {
+        canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        document.body.appendChild(canvas);
+        this.moistureCanvas = canvas;
+      }
+      this.seed = Math.random() * 1000;
+      this.moisture = perlinNoise(this.moistureCanvas, 12, 12, this.seed);
+      this.moisturePerlinData = this.moistureCanvas.getContext('2d').getImageData(0, 0, 100, 100);
+      console.timeEnd('set perlinData: ');
+      console.time('set _setLandAndOcean: ');
+      this._setLandAndOceanData();
+      console.timeEnd('set _setLandAndOcean: ');
+    },
+    _setLandAndOceanData: function () {
+      var cells = this.currentVertices,
+          i = 0,
+          l = cells.length,
+          temp = [],
+          current = [],
+          scale = 500 / 100,
+          d = this.perlinData.data,
+          x = 0,
+          y = 0;
+      for (i; i < l; i++) {
+        temp = cells[i];
+        x = Math.floor(temp[0] / scale);
+        y = Math.floor(temp[1] / scale);
+        //set around data to 0;
+        //around should be ocean;
+        var around = Math.abs(Math.floor(this.cellLength / 1000) - 10) + 1;
+        
+        if (y <= around || y >= 100 - around || x <= around || x>= 100 - around) {
+          this.data[i].biome = 'ocean';
+          this.data[i].elevation = 0;
+        } else {
+          current = d[x * 4 + 100 * 4 * y];
+          if (current > this.oceanScale * 255) {
+            
+            //get corners elevation
+            //then use average of corners elevation
+            this._getElevation(this.data[i]);
+            this._getMoisture(this.data[i]);
+            //this.data[i].biome = 'land';
+            this._setBiome(this.data[i]);
+            
+          } else {
+            this.data[i].biome = 'water';
+            this.data[i].elevation = 0;
+          }
+        }
+      }
+      
+      //if water has neighbor ocean, become ocean
+      
+      var setOcean = function (ids) {
+        var d = app.voronoi.data,
+            i = 0,
+            l = ids.length,
+            temp = null;
+        for (i; i < l; i++) {
+          if (d[ids[i]].biome === 'water') {
+            //console.log('at: ' + ids.join(','));
+            //console.log('find: ' + ids[i]);
+            //console.log('next to find: ' + d[ids[i]].neighbors);
+            d[ids[i]].biome = 'ocean';
+            setOcean(d[ids[i]].neighbors);
+          }
+        }
+      };
+      
+      var j = 0,
+          len = 0,
+          neighbors = null,
+          temp = null;
+      for (i = 0; i < l; i++) {
+        if (this.data[i].biome === 'ocean') {
+          neighbors = this.data[i].neighbors;
+          setOcean(neighbors);
+        }
+      }
+      
+      this.setCoast();
+    },
+    _getElevation: function (center) {
+      var c = this.corners,
+          scale = 500 / 100,
+          d = this.perlinData.data,
+          x = 0,
+          y = 0,
+          corners = center.corners,
+          i = 0,
+          l = corners.length,
+          temp = null,
+          current = null,
+          delta = 0,
+          b = 1 / 4,
+          result = 0;
+      for (i; i < l; i++) {
+        if (c[corners[i]].elevation) {result += c[corners[i]].elevation; continue;}
+        temp = c[corners[i]].point;
+        x = Math.floor(temp[0] / scale);
+        y = Math.floor(temp[1] / scale);
+        current = d[x * 4 + 100 * 4 * y];
+        delta = (current - this.oceanScale * 255) / (255 - this.oceanScale * 255);
+        if (delta <= b) {
+          delta = 1;
+        } else if (delta <= b * 2) {
+          delta = 2;
+        } else if (delta <= b * 3) {
+          delta = 3;
+        } else {
+          delta = 4;
+        }
+        c[corners[i]].elevation = delta;
+        result += delta;
+      }
+      center.elevation = Math.ceil(result / l);
+    },
+    _getMoisture: function (center) {
+      var scale = 500 / 100,
+          d = this.moisturePerlinData.data,
+          p = center.point,
+          x = Math.floor(p[0] / scale),
+          y = Math.floor(p[1] / scale),
+          b = 1 / 6,
+          temp = null,
+          current = null,
+          delta = 0,
+          result = 0;
+      current = d[x * 4 + 100 * 4 * y] / 255;
+      if (current <= b) {
+        delta = 1;
+      } else if (current <= b * 2) {
+        delta = 2;
+      } else if (current <= b * 3) {
+        delta = 3;
+      } else if (current <= b * 4) {
+        delta = 4;
+      } else if (current <= b * 5) {
+        delta = 5;
+      } else {
+        delta = 6;
+      }
+      //console.log(delta);
+      center.moisture = delta;
+    },
+    _setBiome: function (center) {
+      var e = center.elevation || 0,
+          m = center.moisture || 0;
+      if (e === 4) {
+        if (m >= 4) {
+          center.biome = 'snow';
+        } else if (m === 3) {
+          center.biome = 'tundra';
+        } else if (m === 2) {
+          center.biome = 'bare';
+        } else if (m === 1) {
+          center.biome = 'scorched';
+        } 
+      } else if (e === 3) {
+        if (m >= 5) {
+          center.biome = 'taiga';
+        } else if (m >= 3) {
+          center.biome = 'shrubland';
+        } else if (m >= 1) {
+          center.biome = 'temperate desert';
+        }
+      } else if (e === 2) {
+        if (m === 6) {
+          center.biome = 'temperate rain forest';
+        } else if (m >= 4) {
+          center.biome = 'temperate deciduous forest';
+        } else if (m >= 2) {
+          center.biome = 'grassland';
+        } else if (m === 1) {
+          center.biome = 'temperate desert';
+        } 
+      } else if (e === 1) {
+        if (m >= 5) {
+          center.biome = 'tropical rain forest';
+        } else if (m >= 3) {
+          center.biome = 'tropical seasonal forest';
+        } else if (m === 2) {
+          center.biome = 'grassland';
+        } else if (m === 1) {
+          center.biome = 'subtropical desert';
+        } 
+      }
+    },
+    _setRiver: function () {
+      var s = this.sides,
+          idx = 0,
+          c = this.corners,
+          hc = this.hashCorner,
+          d = this.data,
+          riverNumber = Math.floor(Math.random() * 5),
+          range = this.cellLength / riverNumber,
+          temp = null,
+          c1 = null,
+          sides = null;
+      this.riverNumber = riverNumber;//for test
+      for (idx in d) {
+        temp = d[idx]
+        if (temp.biome !== 'ocean' && temp.elevation > 3) {
+          if (Math.random() >= 0.8 && idx >= (this.riverNumber - riverNumber) * range) {
+            //get a river
+            c1 = this._getCornerByHighestElevation(temp.corners);
+            //console.log(temp.corners);
+            //console.log(c1);
+            //console.log('---');
+            if (!this.hasChecked || this.hasChecked.indexOf(c1) === -1) {
+              this._setRiverPath(c1);
+              riverNumber--;
+            }
+            //no river number then break  
+            if (riverNumber === 0) {
+              //break;
+            }
+          }
+        }
+      }
+      //remove hasChecked
+      //this.hasChecked = null;
+    },
+    _getCornerByHighestElevation: function (corners) {
+      var c = this.corners,
+          max = 0,
+          result = null,
+          i = 0,
+          l = corners.length,
+          temp = null;
+      for (i; i < l; i++) {
+        temp = c[corners[i]];
+        if (max <= (temp.elevation || 0)) {
+          result = corners[i];
+          max = temp.elevation;
+        }
+      }
+      return result;
+    },
+    _setRiverPath: function (cornerId, arr) {
+      arr = arr || [];
+      this.hasChecked = this.hasChecked || [cornerId];
+      var c = this.corners,
+          s = this.sides,
+          d = this.data,
+          toucher = c[cornerId].toucher,
+          i = 0,
+          l = toucher.length,
+          min = 10,
+          temp = null,
+          bio = null,
+          next = null,
+          c1 = null,
+          id = '';
+      for (i; i < l; i++) {
+        temp = s[toucher[i]].corner;
+        bio = temp[0] === cornerId ? temp[1] : temp[0];
+        if (this.hasChecked.indexOf(bio) === -1) {
+          next = c[bio].elevation;
+          if (next < min) {
+            min = next;
+            id = toucher[i];
+            c1 = bio;
+            this.hasChecked.push(bio);
+          }
+        }
+      }
+      
+      if (id !== '') {
+        var o = s[id].owner;
+        if (d[o[0]].biome === 'ocean') {
+          if (!this.riverPath) {this.riverPath = []}
+          this.riverPath.push(arr);
+        } else if (d[o[1]] && d[o[1]].biome === 'ocean') {
+          if (!this.riverPath) {this.riverPath = []}
+          this.riverPath.push(arr);
+        } else {
+          arr.push(id);
+          this._setRiverPath(c1, arr);
+        }
+      } else {
+        if (!this.riverPath) {this.riverPath = []}
+        this.riverPath.push(arr);
+      }
+    },
+    setCoast: function () {
+      //template set coast
+      var id = '',
+          o1 = null,
+          o2 = null,
+          s = this.sides;
+      for (id in s) {
+        if (s[id].owner.length === 2) {
+          o1 = this.data[s[id].owner[0]];
+          o2 = this.data[s[id].owner[1]];
+          if (o1.biome === 'land') {
+            if (o2.biome === 'ocean') {
+              s[id].path = this.noiseEdge(s[id].path, 2, 3);
+              o1.elevation = 1;
+              o2.elevation = 0;
+            } else if (o2.biome === 'water') {
+              s[id].path = this.noiseEdge(s[id].path, 3, 2);
+              o2.elevation = 0;
+            } else {
+              s[id].path = this.noiseEdge(s[id].path, 8, 1);
+            }
+            
+          } else if (o1.biome === 'ocean') {
+            o1.elevation = 0;
+            if (o2.biome === 'land') {
+              s[id].path = this.noiseEdge(s[id].path, 2, 3);
+              o2.elevation = 1;
+            } else if (o2.biome === 'water') {
+              s[id].path = this.noiseEdge(s[id].path, 3, 2);
+              o2.elevation = 0;
+            } else {
+              s[id].path = this.noiseEdge(s[id].path, 8, 1);
+            }
+          }
+        }
+      }
+    },
+		showCornerAndSide: function () {
+      var ctx = this.canvas.getContext('2d');
+      ctx.beginPath();
+      ctx.fillStyle = '#00ffff';
+      var corners = this.corners,
+          id = '',
+          temp = null;
+      for (id in corners) {
+        ctx.beginPath();
+        temp = corners[id].point;
+        ctx.fillText(id, temp[0], temp[1]);
+        ctx.closePath();
+      }
+      
+      var sides = this.sides,
+          corners = this.corners,
+          id = '',
+          point1 = null,
+          point2 = null,
+          temp = null;
+      ctx.fillStyle = '#000000';
+      for (id in sides) {
+        ctx.beginPath();
+        temp = sides[id].path;
+        point1 = temp[0];
+        point2 = temp[temp.length - 1];
+        ctx.fillText(id, (point1[0] + point2[0]) / 2, (point1[1] + point2[1]) / 2);
+        ctx.closePath();
+      }
+    },
+    _testCenterElevation: function () {
+      var ctx = this.canvas.getContext('2d'),
+          d = this.data,
+          idx = 0;
+      ctx.fillStyle = '#0000ff';
+      for (idx in d) {
+        ctx.fillText(typeof d[idx].elevation !== 'undefined' ? d[idx].elevation : 'x', d[idx].point[0], d[idx].point[1]);
+      }
+    },
+    _testCornerElevation: function () {
+      var ctx = this.canvas.getContext('2d'),
+          d = this.corners,
+          idx = 0;
+      ctx.fillStyle = '#0000ff';
+      for (idx in d) {
+        ctx.fillText(typeof d[idx].elevation !== 'undefined' ? d[idx].elevation : 'x', d[idx].point[0], d[idx].point[1]);
+      }
+    },
+    _testSides: function () {
+      this.showCells();
+      this.showCornerAndSide();
+      console.log(this.sides);
+    },
+    _drawRiverPath: function () {
+      var ctx = this.canvas.getContext('2d');
+      ctx.save();
+      ctx.strokeStyle = '#9999ff';
+      //ctx.lineWidth = 1;
+      var p = this.riverPath;
+      if (window.console) {console.log(p);}
+      if (p) {
+        var i = 0,
+            j = 0,
+            z = 0,
+            l = p.length,
+            len = 0,
+            leng = 0,
+            temp = null,
+            s = this.sides,
+            current = null;
+        for (i; i < l; i++) {
+          temp = p[i];
+          len = temp.length;
+          for (j = 0; j < len; j++) {
+            current = s[temp[j]].path;
+            ctx.beginPath();
+            ctx.moveTo(current[0][0], current[0][1]);
+            leng = current.length;
+            for (z = 0; z < leng; z++) {
+              ctx.lineTo(current[z][0], current[z][1]);
+            }
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+    },
+    ini: function () {
+			this.canvas = document.getElementById('canvas');
+      this.update();
+		}
+	}
+	
+	app.ini();
+	
+  window.app = app;
+
+}(false);
+
+</script>
+
+</section>
+      
     </div>
 
     <!-- FOOTER  -->
