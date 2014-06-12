@@ -49,7 +49,7 @@
 <hr><p>just a toy :)</p>
       </section>
       
-      <section>
+      <section id="section" style="width: 500px; margin: 0 auto;">
         <script src="d3.v3.min.js"></script>
         <script src="Simplex.js"></script>
         <script src="perlin.js"></script>
@@ -657,7 +657,7 @@ void function (isDebug) {
         var canvas = document.createElement('canvas');
         canvas.width = 100;
         canvas.height = 100;
-        document.body.appendChild(canvas);
+        document.section.appendChild(canvas);
         this.perlinCanvas = canvas;
       }
       this.seed = Math.random() * 1000;
@@ -668,7 +668,7 @@ void function (isDebug) {
         canvas = document.createElement('canvas');
         canvas.width = 100;
         canvas.height = 100;
-        document.body.appendChild(canvas);
+        document.section.appendChild(canvas);
         this.moistureCanvas = canvas;
       }
       this.seed = Math.random() * 1000;
