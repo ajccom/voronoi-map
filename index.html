@@ -128,7 +128,7 @@ void function (isDebug) {
 				app.voronoi.width = w;
 				app.voronoi.height = h;
 			}
-      this.cellLength = num || 5000;
+      this.cellLength = num || 8000;
 			var vertices = d3.range(this.cellLength).map(function(d) {
         return [Math.random() * app.voronoi.width, Math.random() * app.voronoi.height];
 			});
@@ -320,23 +320,26 @@ void function (isDebug) {
       //draw river
       this._drawRiverPath();
       
-      
+      //this._testCenterElevation();
+      //this._testCornerElevation();
       //clear data
-      delete this.data;
-      delete this.sides;
-      delete this.corners;
-      delete this.currentVertices;
-      delete this.currentPathsVertices;
-      delete this.isRelaxed;
-      delete this.delaunayData;
-      delete this.hashCell;
-      delete this.hashNeighbor;
-      delete this.hashSide;
-      delete this.hashEdge;
-      delete this.hashCorner;
-      delete this.hashCornerToucher;
-      delete this.hasChecked;
-      delete this.riverPath;
+      if (0) {
+        delete this.data;
+        delete this.sides;
+        delete this.corners;
+        delete this.currentVertices;
+        delete this.currentPathsVertices;
+        delete this.isRelaxed;
+        delete this.delaunayData;
+        delete this.hashCell;
+        delete this.hashNeighbor;
+        delete this.hashSide;
+        delete this.hashEdge;
+        delete this.hashCorner;
+        delete this.hashCornerToucher;
+        delete this.hasChecked;
+        delete this.riverPath;
+      }
     },
     _setCellsData: function () {
       //neighbors
@@ -657,10 +660,10 @@ void function (isDebug) {
         var canvas = document.createElement('canvas');
         canvas.width = 100;
         canvas.height = 100;
-        document.getElementById('section').appendChild(canvas);
+        document.body.appendChild(canvas);
         this.perlinCanvas = canvas;
       }
-      this.seed = Math.random() * 1000;
+      this.seed = Math.random() * 10000 + 1;
       this.perlin = perlinNoise(this.perlinCanvas, 54, 54, this.seed);
       this.perlinData = this.perlinCanvas.getContext('2d').getImageData(0, 0, 100, 100);
       
@@ -668,7 +671,7 @@ void function (isDebug) {
         canvas = document.createElement('canvas');
         canvas.width = 100;
         canvas.height = 100;
-        document.getElementById('section').appendChild(canvas);
+        document.body.appendChild(canvas);
         this.moistureCanvas = canvas;
       }
       this.seed = Math.random() * 1000;
@@ -681,14 +684,19 @@ void function (isDebug) {
     },
     _setLandAndOceanData: function () {
       var cells = this.currentVertices,
+          c = this.corners,
           i = 0,
+          j = 0,
           l = cells.length,
+          len = 0,
           temp = [],
-          current = [],
+          current = null,
+          corners = null,
           scale = 500 / 100,
           d = this.perlinData.data,
           x = 0,
-          y = 0;
+          y = 0,
+          other = {};
       for (i; i < l; i++) {
         temp = cells[i];
         x = Math.floor(temp[0] / scale);
@@ -700,7 +708,20 @@ void function (isDebug) {
         if (y <= around || y >= 100 - around || x <= around || x>= 100 - around) {
           this.data[i].biome = 'ocean';
           this.data[i].elevation = 0;
+          corners = this.data[i].corners;
+          j = 0;
+          len = corners.length;
+          for (j; j < len; j++) {
+            c[corners[j]].elevation = 0;
+          }
         } else {
+          other[i] = {
+            current: d[x * 4 + 100 * 4 * y]
+          }
+        }
+      }
+      
+      /* else {
           current = d[x * 4 + 100 * 4 * y];
           if (current > this.oceanScale * 255) {
             
@@ -714,6 +735,28 @@ void function (isDebug) {
           } else {
             this.data[i].biome = 'water';
             this.data[i].elevation = 0;
+          }
+        }*/
+      
+      var idx = 0;
+      for (idx in other) {
+        current = other[idx].current;
+        if (current > this.oceanScale * 255) {
+          //get corners elevation
+          //then use average of corners elevation
+          this.data[idx].biome = 'land';
+          this._getElevation(this.data[idx]);
+          this._getMoisture(this.data[idx]);
+          //this.data[i].biome = 'land';
+          this._setBiome(this.data[idx]);
+        } else {
+          this.data[idx].biome = 'water';
+          this.data[idx].elevation = 0;
+          corners = this.data[idx].corners;
+          j = 0;
+          len = corners.length;
+          for (j; j < len; j++) {
+            c[corners[j]].elevation = 0;
           }
         }
       }
@@ -764,7 +807,7 @@ void function (isDebug) {
           b = 1 / 4,
           result = 0;
       for (i; i < l; i++) {
-        if (c[corners[i]].elevation) {result += c[corners[i]].elevation; continue;}
+        if (typeof c[corners[i]].elevation !== 'undefined') {result += c[corners[i]].elevation; continue;}
         temp = c[corners[i]].point;
         x = Math.floor(temp[0] / scale);
         y = Math.floor(temp[1] / scale);
@@ -774,15 +817,17 @@ void function (isDebug) {
           delta = 1;
         } else if (delta <= b * 2) {
           delta = 2;
-        } else if (delta <= b * 3) {
+        } else if (delta <= b * 3 - 1 / 6) {
           delta = 3;
         } else {
           delta = 4;
         }
+        c[corners[i]].code = current;
         c[corners[i]].elevation = delta;
         result += delta;
+        
       }
-      center.elevation = Math.ceil(result / l);
+      center.elevation = Math.max(1, parseInt(result / l, 10));
     },
     _getMoisture: function (center) {
       var scale = 500 / 100,
@@ -869,7 +914,7 @@ void function (isDebug) {
       this.riverNumber = riverNumber;//for test
       for (idx in d) {
         temp = d[idx]
-        if (temp.biome !== 'ocean' && temp.elevation > 3) {
+        if (temp.biome !== 'ocean' && temp.elevation >= 2) {
           if (Math.random() >= 0.8 && idx >= (this.riverNumber - riverNumber) * range) {
             //get a river
             c1 = this._getCornerByHighestElevation(temp.corners);
@@ -915,7 +960,7 @@ void function (isDebug) {
           toucher = c[cornerId].toucher,
           i = 0,
           l = toucher.length,
-          min = 10,
+          min = 255,
           temp = null,
           bio = null,
           next = null,
@@ -925,7 +970,7 @@ void function (isDebug) {
         temp = s[toucher[i]].corner;
         bio = temp[0] === cornerId ? temp[1] : temp[0];
         if (this.hasChecked.indexOf(bio) === -1) {
-          next = c[bio].elevation;
+          next = c[bio].code || 0;// || c[bio].elevation;
           if (next < min) {
             min = next;
             id = toucher[i];
@@ -962,30 +1007,26 @@ void function (isDebug) {
         if (s[id].owner.length === 2) {
           o1 = this.data[s[id].owner[0]];
           o2 = this.data[s[id].owner[1]];
-          if (o1.biome === 'land') {
+          //console.log(id);
+          //console.log(o1.biome);
+          //console.log(o2.biome);
+          //console.log('============');
+          if (o1.biome !== 'ocean' && o1.biome !== 'water') {
             if (o2.biome === 'ocean') {
               s[id].path = this.noiseEdge(s[id].path, 2, 3);
-              o1.elevation = 1;
-              o2.elevation = 0;
             } else if (o2.biome === 'water') {
-              s[id].path = this.noiseEdge(s[id].path, 3, 2);
-              o2.elevation = 0;
+              s[id].path = this.noiseEdge(s[id].path, 2, 3);
             } else {
-              s[id].path = this.noiseEdge(s[id].path, 8, 1);
+              //s[id].path = this.noiseEdge(s[id].path, 8, 1);
             }
             
-          } else if (o1.biome === 'ocean') {
-            o1.elevation = 0;
-            if (o2.biome === 'land') {
+          } else {
+            if (o2.biome !== 'ocean' && o2.biome !== 'water') {
               s[id].path = this.noiseEdge(s[id].path, 2, 3);
-              o2.elevation = 1;
-            } else if (o2.biome === 'water') {
-              s[id].path = this.noiseEdge(s[id].path, 3, 2);
-              o2.elevation = 0;
             } else {
-              s[id].path = this.noiseEdge(s[id].path, 8, 1);
+              //s[id].path = this.noiseEdge(s[id].path, 3, 2);
             }
-          }
+          }  
         }
       }
     },
@@ -1090,6 +1131,7 @@ void function (isDebug) {
 }(false);
 
 </script>
+
 
 </section>
       
